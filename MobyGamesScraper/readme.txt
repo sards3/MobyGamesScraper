@@ -1,7 +1,10 @@
 ﻿To use this program, you need a MobyGames API key. You can specify the key in one of two ways:
 
 1. At the command line with the -k option, e.g.: MobyGamesScraper -k YOURKEYGOESHERE
-2. In a file named mobyapikey.txt, located in the same directory as the MobyGamesScraper.exe file. This is useful if you don't want to keep supplying the key at the command line.
+2. In config.ini, located in the same directory as the MobyGamesScraper.exe file. This is useful if you don't want to keep supplying the key at the command line.
+
+config.ini also has some other configurable options: the number of seconds between requests, the number of games per request, and the CSV delimiter.
+See config.ini for more information.
 
 There are two commands available:
 

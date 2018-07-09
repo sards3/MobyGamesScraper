@@ -45,9 +45,9 @@ namespace MobyGamesScraper
         public string description { get; set; }
         public int game_id { get; set; }
         public List<Genre> genres { get; set; }
-        public decimal moby_score { get; set; }
+        public decimal? moby_score { get; set; }
         public string moby_url { get; set; }
-        public int num_votes { get; set; }
+        public int? num_votes { get; set; }
         public string official_url { get; set; }
         public List<PlatformRelease> platforms { get; set; }
         // sample_cover
@@ -74,10 +74,11 @@ namespace MobyGamesScraper
     class Program
     {
         const string MobyApiBase = "https://api.mobygames.com/v1/";
-        static string MobyApiKey;
+        static string MobyApiKey = null;
 
-        const int secondsBetweenRequests = 2;
-        const int gamesPerRequest = 100;
+        static int secondsBetweenRequests = 10;
+        static int gamesPerRequest = 100;
+        static string csvDelimiter = "|";
 
         static HttpClient http = new HttpClient();
 
@@ -87,6 +88,8 @@ namespace MobyGamesScraper
 
         static int Main(string[] args)
         {
+            ReadIniFile();
+
             var app = new CommandLineApplication();
 
             app.HelpOption();
@@ -104,7 +107,7 @@ namespace MobyGamesScraper
                 listPlatformsCmd.HelpOption();
                 listPlatformsCmd.Description = "List the IDs and names of the available platforms";
                 listPlatformsCmd.OnExecute(async () =>
-                {
+                {                    
                     if (SetMobyApiKey(optionKey))
                     {
                         await ListPlatforms();
@@ -145,15 +148,13 @@ namespace MobyGamesScraper
                 MobyApiKey = optionKey.Value();
                 return true;
             }
-            else if (File.Exists("mobyapikey.txt"))
+            else if (!string.IsNullOrWhiteSpace(MobyApiKey))
             {
-                var key = File.ReadAllText("mobyapikey.txt");
-                MobyApiKey = key.Trim();
                 return true;
             }
             else
             {
-                Console.WriteLine("You must specify the MobyGames API key with the -k option, or create a file called mobyapikey.txt containing the key.");
+                Console.WriteLine("You must specify the MobyGames API key with the -k option, or set it in the config.ini file.");
                 return false;
             }
         }
@@ -162,6 +163,7 @@ namespace MobyGamesScraper
         {
             Console.WriteLine("Retrieving platforms...");
             var platformsUrl = MobyApiBase + $"platforms?api_key={MobyApiKey}";
+
             var platformsJson = await http.GetStringAsync(platformsUrl);
             platforms = JsonConvert.DeserializeObject<Platforms>(platformsJson).platforms;
             platformsById = platforms.ToDictionary(p => p.platform_id);
@@ -220,7 +222,7 @@ namespace MobyGamesScraper
                 var gameRows = new List<GameCsvRow>(platformGames.Count);
                 foreach (var game in platformGames)
                 {
-                    var releaseDate = game.platforms.First(p => p.platform_id == platform.platform_id).first_release_date;
+                    var releaseDate = game.platforms.FirstOrDefault(p => p.platform_id == platform.platform_id)?.first_release_date ?? "";
                     var match = yearRegex.Match(releaseDate);
                     var year = match.Success ? match.Value : releaseDate;
 
@@ -246,7 +248,7 @@ namespace MobyGamesScraper
                 using (var streamWriter = File.CreateText(csvFileName))
                 {
                     var csvWriter = new CsvWriter(streamWriter);
-                    csvWriter.Configuration.Delimiter = "|";
+                    csvWriter.Configuration.Delimiter = csvDelimiter;
                     csvWriter.WriteRecords(gameRows);
                 }
 
@@ -269,7 +271,7 @@ namespace MobyGamesScraper
                 allGames.AddRange(games);
 
                 if (games.Count > 0)
-                    Console.WriteLine($"Retrieved {games.Count} games...");                
+                    Console.WriteLine($"Retrieved {games.Count} {platform.platform_name} games... Total: {allGames.Count}");                
 
                 if (games.Count < gamesPerRequest)
                     break;
@@ -285,6 +287,39 @@ namespace MobyGamesScraper
         static void Pause()
         {
             Thread.Sleep(1000 * secondsBetweenRequests);
+        }
+
+        static void ReadIniFile()
+        {            
+            var iniFileName = Directory.EnumerateFiles(".", "*.ini").SingleOrDefault();
+            if (iniFileName == null)
+                return;
+
+            var iniFile = File.ReadAllText(iniFileName);
+            var iniLines = iniFile.Split(new[] { "\n" }, StringSplitOptions.RemoveEmptyEntries)
+                .Select(text => text.Trim());
+
+            foreach (var line in iniLines)
+            {
+                if (line.StartsWith(";") || string.IsNullOrWhiteSpace(line))
+                    continue;                
+
+                var equalsIndex = line.IndexOf("=");
+                if (equalsIndex == -1)
+                    continue;
+
+                var key = line.Substring(0, equalsIndex).ToLower();
+                var value = line.Substring(equalsIndex + 1);
+
+                switch (key)
+                {
+                    case "mobyapikey": MobyApiKey = value; break;
+                    case "secondsbetweenrequests": secondsBetweenRequests = int.Parse(value); break;
+                    case "gamesperrequest": gamesPerRequest = int.Parse(value); break;
+                    case "csvdelimiter": csvDelimiter = value; break;
+                    default: break;
+                }                    
+            }
         }
     }
 }
